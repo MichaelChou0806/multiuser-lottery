@@ -254,6 +254,10 @@
             flex: 1;
         }
         
+        .cancel-btn {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        }
+        
         .error {
             background: #ffebee;
             color: #c62828;
@@ -304,10 +308,15 @@
                 <div id="participantList" class="participant-list"></div>
             </div>
             
-            <!-- 待機階段控制 -->
+            <!-- 準備階段控制 -->
             <div id="lobbyControls" class="controls hidden">
                 <button onclick="startRound()" id="startBtn">開始本回合</button>
                 <button onclick="leaveRoom()">離開房間</button>
+            </div>
+            
+            <!-- 主持人特殊控制 -->
+            <div id="hostControls" class="controls hidden">
+                <button onclick="kickAll()" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);">踢出所有人</button>
             </div>
             
             <!-- 輸入階段 -->
@@ -322,10 +331,15 @@
                 </div>
             </div>
             
+            <!-- 主持人輸入階段控制 -->
+            <div id="inputControls" class="controls hidden">
+                <button onclick="cancelRound()" class="cancel-btn">取消回合</button>
+            </div>
+            
             <!-- 主持人揭曉按鈕 -->
             <div id="revealControls" class="controls hidden">
                 <button onclick="revealResult()">揭曉結果</button>
-                <button onclick="forceReveal()">強制揭曉（未提交者視為0）</button>
+                <button onclick="forceReveal()">強制揭曉（未提交者視為1）</button>
             </div>
             
             <!-- 結果顯示 -->
@@ -408,7 +422,7 @@
         function updateRoomState(state) {
             // 更新階段
             const phaseText = {
-                'lobby': '待機中',
+                'lobby': '準備中',
                 'input': '輸入數字中',
                 'revealed': '結果已揭曉'
             };
@@ -453,7 +467,7 @@
                     statusDiv.appendChild(statusText);
                 }
                 
-                // 主持人可以踢人（待機階段）
+                // 主持人可以踢人（準備階段）
                 if (isHost && state.phase === 'lobby' && p.name !== currentUser) {
                     const kickBtn = document.createElement('button');
                     kickBtn.className = 'kick-btn';
@@ -471,23 +485,51 @@
             hideAllControls();
             
             if (state.phase === 'lobby') {
+                // 進入準備階段時，重置提交狀態
+                hasSubmitted = false;
+                
                 document.getElementById('lobbyControls').classList.remove('hidden');
                 document.getElementById('startBtn').disabled = !isHost || state.participants.length < 2;
+                
+                // 顯示主持人特殊控制
+                if (isHost && state.participants.length > 1) {
+                    document.getElementById('hostControls').classList.remove('hidden');
+                }
             } else if (state.phase === 'input') {
+                // 每次進入 input 階段時，根據伺服器狀態判斷是否已提交
+                const mySubmission = state.submissions && state.submissions[currentUser];
+                
+                // 如果伺服器說已提交，但本地沒記錄，同步狀態
+                if (mySubmission && !hasSubmitted) {
+                    hasSubmitted = true;
+                }
+                // 如果伺服器說沒提交，但本地有記錄，重置狀態（新回合）
+                else if (!mySubmission && hasSubmitted) {
+                    hasSubmitted = false;
+                }
+                
                 document.getElementById('inputSection').classList.remove('hidden');
                 document.getElementById('maxNumber').textContent = state.participants.length;
                 document.getElementById('numberInput').min = 1;
                 document.getElementById('numberInput').max = state.participants.length;
                 
-                if (!hasSubmitted) {
+                // 根據提交狀態更新 UI
+                if (hasSubmitted) {
+                    document.getElementById('numberInput').disabled = true;
+                    document.getElementById('submitStatus').textContent = '✅ 已提交';
+                } else {
                     document.getElementById('numberInput').disabled = false;
                     document.getElementById('submitStatus').textContent = '';
                 }
                 
                 if (isHost) {
+                    document.getElementById('inputControls').classList.remove('hidden');
                     document.getElementById('revealControls').classList.remove('hidden');
                 }
             } else if (state.phase === 'revealed') {
+                // 進入結果階段時，確保重置提交狀態
+                hasSubmitted = false;
+                
                 document.getElementById('resultSection').classList.remove('hidden');
                 document.getElementById('winnerName').textContent = `🏆 ${state.winner}`;
                 
@@ -496,38 +538,31 @@
                 detailsEl.innerHTML = '';
                 
                 if (state.result) {
-                    const items = [
-                        { label: '總和', value: state.result.total },
-                        { label: '參與人數', value: state.result.participantCount },
-                        { label: '計算結果', value: `${state.result.total} mod ${state.result.participantCount} = ${state.result.index}` },
-                        { label: '中獎位置', value: `第 ${state.result.index + 1} 位` }
-                    ];
+                    // 只顯示總和
+                    const totalDiv = document.createElement('div');
+                    totalDiv.className = 'result-item';
+                    totalDiv.innerHTML = `
+                        <span>總和:</span>
+                        <strong>${state.result.total}</strong>
+                    `;
+                    detailsEl.appendChild(totalDiv);
                     
-                    items.forEach(item => {
-                        const div = document.createElement('div');
-                        div.className = 'result-item';
-                        div.innerHTML = `
-                            <span>${item.label}:</span>
-                            <strong>${item.value}</strong>
-                        `;
-                        detailsEl.appendChild(div);
-                    });
-                    
-                    // 顯示各人提交的數字
+                    // 顯示各人提交的數字（靠左對齊）
                     if (state.result.submissions) {
                         const subDiv = document.createElement('div');
                         subDiv.className = 'result-item';
                         subDiv.style.flexDirection = 'column';
                         subDiv.style.alignItems = 'flex-start';
-                        subDiv.innerHTML = '<span>各人提交:</span>';
+                        subDiv.innerHTML = '<span style="margin-bottom: 10px;">各人提交:</span>';
                         
                         const subList = document.createElement('div');
-                        subList.style.marginTop = '5px';
+                        subList.style.marginLeft = '20px';
                         
                         for (const [name, value] of Object.entries(state.result.submissions)) {
                             const item = document.createElement('div');
-                            item.textContent = `${name}: ${value}`;
-                            item.style.marginLeft = '20px';
+                            item.style.marginBottom = '5px';
+                            item.style.textAlign = 'left';
+                            item.innerHTML = `<span style="display: inline-block; min-width: 30px; font-weight: bold; color: #667eea;">${value}</span> - ${name}`;
                             subList.appendChild(item);
                         }
                         
@@ -542,7 +577,9 @@
         
         function hideAllControls() {
             document.getElementById('lobbyControls').classList.add('hidden');
+            document.getElementById('hostControls').classList.add('hidden');
             document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('inputControls').classList.add('hidden');
             document.getElementById('revealControls').classList.add('hidden');
             document.getElementById('resultSection').classList.add('hidden');
         }
@@ -550,6 +587,13 @@
         function startRound() {
             socket.emit('startRound');
             hasSubmitted = false;
+        }
+        
+        function cancelRound() {
+            if (confirm('確定要取消本回合嗎？所有人的輸入將會清除。')) {
+                socket.emit('cancelRound');
+                hasSubmitted = false;
+            }
         }
         
         function submitNumber() {
@@ -580,6 +624,12 @@
         function kickUser(userName) {
             if (confirm(`確定要踢出 ${userName} 嗎？`)) {
                 socket.emit('kickUser', userName);
+            }
+        }
+        
+        function kickAll() {
+            if (confirm('確定要踢出所有人嗎？房間將會清空！')) {
+                socket.emit('kickAll');
             }
         }
         
