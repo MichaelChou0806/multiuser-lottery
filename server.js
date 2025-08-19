@@ -401,8 +401,11 @@ io.on('connection', (socket) => {
 
 // 啟動伺服器
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-   console.log(`伺服器運行在 port ${PORT}`);
+const HOST = '0.0.0.0';
+
+server.listen(PORT, HOST, () => {
+    console.log(`伺服器運行在 http://${HOST}:${PORT}`);
 });
+
 
 
