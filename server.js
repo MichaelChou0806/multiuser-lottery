@@ -10,6 +10,16 @@ const io = socketIO(server);
 // 靜態檔案
 app.use(express.static('public'));
 
+// 健康檢查路徑
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// 根路徑處理
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // 房間資料結構
 const rooms = {};
 
@@ -29,9 +39,14 @@ class Room {
         // 檢查是否已存在
         const existing = this.participants.find(p => p.name === userName);
         if (existing) {
+            // 如果在線，不允許重複加入
+            if (existing.online) {
+                return { success: false, reason: 'nameInUse' };
+            }
+            // 離線可以重連
             existing.socketId = socketId;
             existing.online = true;
-            return false; // 重新連線
+            return { success: true, isNewUser: false };
         }
 
         // 新加入
@@ -43,7 +58,7 @@ class Room {
             online: true,
             joinTime: Date.now()
         });
-        return true;
+        return { success: true, isNewUser: true };
     }
 
     removeParticipant(socketId) {
@@ -100,24 +115,24 @@ class Room {
     }
 
     submitNumber(userName, number) {
-    if (this.phase !== 'input') {
-        return false;
+        if (this.phase !== 'input') {
+            return false;
+        }
+        
+        // 確認是凍結名單中的人
+        if (!this.frozenOrder.find(p => p.name === userName)) {
+            return false;
+        }
+        
+        // 驗證數字範圍 (1 到 n)
+        const n = this.frozenOrder.length;
+        if (number < 1 || number > n) {
+            return false;
+        }
+        
+        this.submissions[userName] = number;
+        return true;
     }
-    
-    // 確認是凍結名單中的人
-    if (!this.frozenOrder.find(p => p.name === userName)) {
-        return false;
-    }
-    
-    // 驗證數字範圍 (1 到 n)
-    const n = this.frozenOrder.length;
-    if (number < 1 || number > n) {
-        return false;
-    }
-    
-    this.submissions[userName] = number;
-    return true;
-}
 
     canReveal() {
         const totalParticipants = this.frozenOrder.length;
@@ -130,7 +145,7 @@ class Room {
             return false;
         }
 
-        // 強制揭曉：未提交者視為0
+        // 強制揭曉：未提交者視為1（最小值）
         if (force) {
             this.frozenOrder.forEach(p => {
                 if (!(p.name in this.submissions)) {
@@ -142,33 +157,33 @@ class Room {
         }
 
         // 計算結果
-    let total = 0;
-    for (const value of Object.values(this.submissions)) {
-        total += value;
-    }
+        let total = 0;
+        for (const value of Object.values(this.submissions)) {
+            total += value;
+        }
 
-    const n = this.frozenOrder.length;
-    const remainder = total % n;
-    
-    // 新的對應規則：
-    // 餘數 0 → 最後一位 (index = n-1)
-    // 餘數 1 → 第一位 (index = 0)
-    // 餘數 2 → 第二位 (index = 1)
-    // ...以此類推
-    const winnerIndex = remainder === 0 ? n - 1 : remainder - 1;
-    
-    this.winner = this.frozenOrder[winnerIndex].name;
-    this.result = {
-        total: total,
-        participantCount: n,
-        index: remainder,  // 儲存餘數而非實際索引
-        actualWinnerIndex: winnerIndex,  // 實際的陣列索引
-        submissions: { ...this.submissions }
-    };
-    
-    this.phase = 'revealed';
-    return true;
-}
+        const n = this.frozenOrder.length;
+        const remainder = total % n;
+        
+        // 新的對應規則：
+        // 餘數 0 → 最後一位 (index = n-1)
+        // 餘數 1 → 第一位 (index = 0)
+        // 餘數 2 → 第二位 (index = 1)
+        // ...以此類推
+        const winnerIndex = remainder === 0 ? n - 1 : remainder - 1;
+        
+        this.winner = this.frozenOrder[winnerIndex].name;
+        this.result = {
+            total: total,
+            participantCount: n,
+            index: remainder,  // 儲存餘數而非實際索引
+            actualWinnerIndex: winnerIndex,  // 實際的陣列索引
+            submissions: { ...this.submissions }
+        };
+        
+        this.phase = 'revealed';
+        return true;
+    }
 
     backToLobby() {
         this.phase = 'lobby';
@@ -235,7 +250,14 @@ io.on('connection', (socket) => {
         }
 
         // 加入房間
-        const isNewUser = room.addParticipant(userName, socket.id);
+        const result = room.addParticipant(userName, socket.id);
+        
+        if (!result.success) {
+            if (result.reason === 'nameInUse') {
+                socket.emit('joinError', '此名稱已被使用，請選擇其他名稱');
+                return;
+            }
+        }
         
         currentRoom = roomName;
         currentUser = userName;
@@ -251,7 +273,7 @@ io.on('connection', (socket) => {
         });
 
         // 通知其他人
-        if (isNewUser) {
+        if (result.isNewUser) {
             socket.to(roomName).emit('roomUpdate', room.getState());
         } else {
             io.to(roomName).emit('roomUpdate', room.getState());
@@ -301,102 +323,157 @@ io.on('connection', (socket) => {
         if (!participant || !participant.isHost) {
             socket.emit('error', '只有主持人可以揭曉結果');
             return;
-       }
+        }
 
-       if (room.reveal(false)) {
-           io.to(currentRoom).emit('roomUpdate', room.getState());
-       } else {
-           socket.emit('error', '還有人未提交數字');
-       }
-   });
+        if (room.reveal(false)) {
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        } else {
+            socket.emit('error', '還有人未提交數字');
+        }
+    });
 
-   socket.on('forceReveal', () => {
-       if (!currentRoom || !currentUser) return;
-       
-       const room = rooms[currentRoom];
-       if (!room) return;
+    socket.on('forceReveal', () => {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
 
-       const participant = room.participants.find(p => p.name === currentUser);
-       if (!participant || !participant.isHost) {
-           socket.emit('error', '只有主持人可以強制揭曉');
-           return;
-       }
+        const participant = room.participants.find(p => p.name === currentUser);
+        if (!participant || !participant.isHost) {
+            socket.emit('error', '只有主持人可以強制揭曉');
+            return;
+        }
 
-       if (room.reveal(true)) {
-           io.to(currentRoom).emit('roomUpdate', room.getState());
-       } else {
-           socket.emit('error', '無法揭曉結果');
-       }
-   });
+        if (room.reveal(true)) {
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        } else {
+            socket.emit('error', '無法揭曉結果');
+        }
+    });
 
-   socket.on('backToLobby', () => {
-       if (!currentRoom || !currentUser) return;
-       
-       const room = rooms[currentRoom];
-       if (!room) return;
+    socket.on('cancelRound', () => {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
 
-       const participant = room.participants.find(p => p.name === currentUser);
-       if (!participant || !participant.isHost) {
-           socket.emit('error', '只有主持人可以返回大廳');
-           return;
-       }
+        const participant = room.participants.find(p => p.name === currentUser);
+        if (!participant || !participant.isHost) {
+            socket.emit('error', '只有主持人可以取消回合');
+            return;
+        }
 
-       if (room.backToLobby()) {
-           io.to(currentRoom).emit('roomUpdate', room.getState());
-       }
-   });
+        if (room.phase !== 'input') {
+            socket.emit('error', '只能在輸入階段取消回合');
+            return;
+        }
 
-   socket.on('kickUser', (userName) => {
-       if (!currentRoom || !currentUser) return;
-       
-       const room = rooms[currentRoom];
-       if (!room) return;
+        // 直接回到 lobby 階段
+        if (room.backToLobby()) {
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        }
+    });
 
-       const participant = room.participants.find(p => p.name === currentUser);
-       if (!participant || !participant.isHost) {
-           socket.emit('error', '只有主持人可以踢人');
-           return;
-       }
+    socket.on('backToLobby', () => {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
 
-       if (room.phase !== 'lobby') {
-           socket.emit('error', '只能在待機階段踢人');
-           return;
-       }
+        const participant = room.participants.find(p => p.name === currentUser);
+        if (!participant || !participant.isHost) {
+            socket.emit('error', '只有主持人可以返回大廳');
+            return;
+        }
 
-       const kickedSocketId = room.kickParticipant(userName);
-       if (kickedSocketId) {
-           io.to(kickedSocketId).emit('kicked');
-           io.to(currentRoom).emit('roomUpdate', room.getState());
-       }
-   });
+        if (room.backToLobby()) {
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        }
+    });
 
-   socket.on('leaveRoom', () => {
-       handleDisconnect();
-   });
+    socket.on('kickUser', (userName) => {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
 
-   socket.on('disconnect', () => {
-       handleDisconnect();
-   });
+        const participant = room.participants.find(p => p.name === currentUser);
+        if (!participant || !participant.isHost) {
+            socket.emit('error', '只有主持人可以踢人');
+            return;
+        }
 
-   function handleDisconnect() {
-       if (!currentRoom || !currentUser) return;
-       
-       const room = rooms[currentRoom];
-       if (!room) return;
+        if (room.phase !== 'lobby') {
+            socket.emit('error', '只能在待機階段踢人');
+            return;
+        }
 
-       room.removeParticipant(socket.id);
-       
-       // 如果房間空了，刪除房間
-       if (room.isEmpty()) {
-           delete rooms[currentRoom];
-       } else {
-           io.to(currentRoom).emit('roomUpdate', room.getState());
-       }
+        const kickedSocketId = room.kickParticipant(userName);
+        if (kickedSocketId) {
+            io.to(kickedSocketId).emit('kicked');
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        }
+    });
 
-       socket.leave(currentRoom);
-       currentRoom = null;
-       currentUser = null;
-   }
+    socket.on('kickAll', () => {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
+
+        const participant = room.participants.find(p => p.name === currentUser);
+        if (!participant || !participant.isHost) {
+            socket.emit('error', '只有主持人可以踢出所有人');
+            return;
+        }
+
+        if (room.phase !== 'lobby') {
+            socket.emit('error', '只能在待機階段踢出所有人');
+            return;
+        }
+
+        // 通知所有人（除了主持人）
+        const otherSockets = room.participants
+            .filter(p => p.name !== currentUser && p.online)
+            .map(p => p.socketId);
+        
+        otherSockets.forEach(socketId => {
+            io.to(socketId).emit('kicked');
+        });
+
+        // 清空房間，只保留主持人
+        room.participants = room.participants.filter(p => p.name === currentUser);
+        
+        io.to(currentRoom).emit('roomUpdate', room.getState());
+    });
+
+    socket.on('leaveRoom', () => {
+        handleDisconnect();
+    });
+
+    socket.on('disconnect', () => {
+        handleDisconnect();
+    });
+
+    function handleDisconnect() {
+        if (!currentRoom || !currentUser) return;
+        
+        const room = rooms[currentRoom];
+        if (!room) return;
+
+        room.removeParticipant(socket.id);
+        
+        // 如果房間空了，刪除房間
+        if (room.isEmpty()) {
+            delete rooms[currentRoom];
+        } else {
+            io.to(currentRoom).emit('roomUpdate', room.getState());
+        }
+
+        socket.leave(currentRoom);
+        currentRoom = null;
+        currentUser = null;
+    }
 });
 
 // 啟動伺服器
@@ -406,6 +483,3 @@ const HOST = '0.0.0.0';
 server.listen(PORT, HOST, () => {
     console.log(`伺服器運行在 http://${HOST}:${PORT}`);
 });
-
-
-
