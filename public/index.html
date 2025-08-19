@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多人線上抽籤系統</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 28px;
+        }
+        
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        input {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .room-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .room-info h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .room-info p {
+            color: #666;
+            margin: 5px 0;
+        }
+        
+        .participants {
+            margin: 20px 0;
+        }
+        
+        .participants h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .participant-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .participant {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 6px;
+            transition: background 0.3s;
+        }
+        
+        .participant.host {
+            background: #fff3e0;
+        }
+        
+        .participant.offline {
+            opacity: 0.5;
+        }
+        
+        .participant.winner {
+            background: #e8f5e9;
+            border: 2px solid #4caf50;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        
+        .participant-name {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .participant-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+        }
+        
+        .status-dot.offline {
+            background: #bdbdbd;
+        }
+        
+        .kick-btn {
+            padding: 4px 8px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .input-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f0f4ff;
+            border-radius: 8px;
+        }
+        
+        .input-section h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .input-section p {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        
+        .number-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .number-input input {
+            width: 100px;
+        }
+        
+        .result-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .result-section h3 {
+            color: #2e7d32;
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+        
+        .result-details {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+        }
+        
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        
+        .winner-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2e7d32;
+            margin: 10px 0;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .controls button {
+            flex: 1;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 登入畫面 -->
+        <div id="loginScreen">
+            <h1>🎲 多人線上抽籤系統</h1>
+            <div class="login-form">
+                <input type="text" id="roomName" placeholder="輸入房間名稱" maxlength="20">
+                <input type="text" id="userName" placeholder="輸入你的名字" maxlength="20">
+                <button onclick="joinRoom()">進入房間</button>
+                <div id="loginError" class="error hidden"></div>
+            </div>
+        </div>
+        
+        <!-- 房間畫面 -->
+        <div id="roomScreen" class="hidden">
+            <div class="room-info">
+                <h2>房間：<span id="currentRoom"></span></h2>
+                <p>狀態：<span id="roomPhase"></span></p>
+                <p id="hostInfo"></p>
+            </div>
+            
+            <!-- 參與者列表 -->
+            <div class="participants">
+                <h3>參與者 (<span id="participantCount">0</span>)</h3>
+                <div id="participantList" class="participant-list"></div>
+            </div>
+            
+            <!-- 待機階段控制 -->
+            <div id="lobbyControls" class="controls hidden">
+                <button onclick="startRound()" id="startBtn">開始本回合</button>
+                <button onclick="leaveRoom()">離開房間</button>
+            </div>
+            
+            <!-- 輸入階段 -->
+            <div id="inputSection" class="input-section hidden">
+                <h3>輸入你的數字</h3>
+                <p>請輸入 1 到 <span id="maxNumber"></span> 之間的數字</p>
+                <p style="font-size: 12px; color: #888;">💡 所有人的數字加總後，用總和除以人數的餘數來決定中獎者</p>
+                <div class="number-input">
+                    <input type="number" id="numberInput" min="1" max="1">
+                    <button onclick="submitNumber()">提交</button>
+                    <span id="submitStatus"></span>
+                </div>
+            </div>
+            
+            <!-- 主持人揭曉按鈕 -->
+            <div id="revealControls" class="controls hidden">
+                <button onclick="revealResult()">揭曉結果</button>
+                <button onclick="forceReveal()">強制揭曉（未提交者視為0）</button>
+            </div>
+            
+            <!-- 結果顯示 -->
+            <div id="resultSection" class="result-section hidden">
+                <h3>🎉 抽籤結果</h3>
+                <div class="winner-name" id="winnerName"></div>
+                <div class="result-details" id="resultDetails"></div>
+                <div class="controls">
+                    <button onclick="backToLobby()" id="backBtn">返回大廳</button>
+                </div>
+            </div>
+            
+            <div id="roomError" class="error hidden"></div>
+            <div id="roomSuccess" class="success hidden"></div>
+        </div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket;
+        let currentUser = null;
+        let currentRoom = null;
+        let isHost = false;
+        let hasSubmitted = false;
+        
+        function joinRoom() {
+            const roomName = document.getElementById('roomName').value.trim();
+            const userName = document.getElementById('userName').value.trim();
+            
+            if (!roomName || !userName) {
+                showError('loginError', '請輸入房間名稱和名字');
+                return;
+            }
+            
+            if (!socket) {
+                socket = io();
+                setupSocketListeners();
+            }
+            
+            socket.emit('joinRoom', { roomName, userName });
+        }
+        
+        function setupSocketListeners() {
+            socket.on('joinSuccess', (data) => {
+                currentUser = data.userName;
+                currentRoom = data.roomName;
+                isHost = data.isHost;
+                
+                document.getElementById('loginScreen').classList.add('hidden');
+                document.getElementById('roomScreen').classList.remove('hidden');
+                document.getElementById('currentRoom').textContent = currentRoom;
+                
+                updateRoomState(data.roomState);
+            });
+            
+            socket.on('joinError', (message) => {
+                showError('loginError', message);
+            });
+            
+            socket.on('roomUpdate', (roomState) => {
+                updateRoomState(roomState);
+            });
+            
+            socket.on('kicked', () => {
+                alert('你已被主持人踢出房間');
+                location.reload();
+            });
+            
+            socket.on('numberSubmitted', () => {
+                hasSubmitted = true;
+                document.getElementById('submitStatus').textContent = '✅ 已提交';
+                document.getElementById('numberInput').disabled = true;
+            });
+            
+            socket.on('error', (message) => {
+                showError('roomError', message);
+            });
+        }
+        
+        function updateRoomState(state) {
+            // 更新階段
+            const phaseText = {
+                'lobby': '待機中',
+                'input': '輸入數字中',
+                'revealed': '結果已揭曉'
+            };
+            document.getElementById('roomPhase').textContent = phaseText[state.phase];
+            
+            // 更新主持人資訊
+            const hostInfo = state.participants.find(p => p.isHost);
+            isHost = hostInfo && hostInfo.name === currentUser;
+            document.getElementById('hostInfo').textContent = 
+                `主持人：${hostInfo ? hostInfo.name : '無'} ${isHost ? '(你)' : ''}`;
+            
+            // 更新參與者列表
+            const listEl = document.getElementById('participantList');
+            listEl.innerHTML = '';
+            document.getElementById('participantCount').textContent = state.participants.length;
+            
+            state.participants.forEach((p, index) => {
+                const div = document.createElement('div');
+                div.className = 'participant';
+                if (p.isHost) div.classList.add('host');
+                if (!p.online) div.classList.add('offline');
+                if (state.winner === p.name) div.classList.add('winner');
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'participant-name';
+                nameSpan.textContent = `${index + 1}. ${p.name} ${p.name === currentUser ? '(你)' : ''} ${p.isHost ? '👑' : ''}`;
+                
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'participant-status';
+                
+                const dot = document.createElement('div');
+                dot.className = 'status-dot';
+                if (!p.online) dot.classList.add('offline');
+                
+                statusDiv.appendChild(dot);
+                
+                // 輸入階段顯示提交狀態
+                if (state.phase === 'input' && state.submissions) {
+                    const submitted = state.submissions[p.name];
+                    const statusText = document.createElement('span');
+                    statusText.textContent = submitted ? '✅' : '⏳';
+                    statusDiv.appendChild(statusText);
+                }
+                
+                // 主持人可以踢人（待機階段）
+                if (isHost && state.phase === 'lobby' && p.name !== currentUser) {
+                    const kickBtn = document.createElement('button');
+                    kickBtn.className = 'kick-btn';
+                    kickBtn.textContent = '踢出';
+                    kickBtn.onclick = () => kickUser(p.name);
+                    statusDiv.appendChild(kickBtn);
+                }
+                
+                div.appendChild(nameSpan);
+                div.appendChild(statusDiv);
+                listEl.appendChild(div);
+            });
+            
+            // 根據階段顯示不同控制
+            hideAllControls();
+            
+            if (state.phase === 'lobby') {
+                document.getElementById('lobbyControls').classList.remove('hidden');
+                document.getElementById('startBtn').disabled = !isHost || state.participants.length < 2;
+            } else if (state.phase === 'input') {
+                document.getElementById('inputSection').classList.remove('hidden');
+                document.getElementById('maxNumber').textContent = state.participants.length;
+                document.getElementById('numberInput').min = 1;
+                document.getElementById('numberInput').max = state.participants.length;
+                
+                if (!hasSubmitted) {
+                    document.getElementById('numberInput').disabled = false;
+                    document.getElementById('submitStatus').textContent = '';
+                }
+                
+                if (isHost) {
+                    document.getElementById('revealControls').classList.remove('hidden');
+                }
+            } else if (state.phase === 'revealed') {
+                document.getElementById('resultSection').classList.remove('hidden');
+                document.getElementById('winnerName').textContent = `🏆 ${state.winner}`;
+                
+                // 顯示詳細結果
+                const detailsEl = document.getElementById('resultDetails');
+                detailsEl.innerHTML = '';
+                
+                if (state.result) {
+                    const items = [
+                        { label: '總和', value: state.result.total },
+                        { label: '參與人數', value: state.result.participantCount },
+                        { label: '計算結果', value: `${state.result.total} mod ${state.result.participantCount} = ${state.result.index}` },
+                        { label: '中獎位置', value: `第 ${state.result.index + 1} 位` }
+                    ];
+                    
+                    items.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'result-item';
+                        div.innerHTML = `
+                            <span>${item.label}:</span>
+                            <strong>${item.value}</strong>
+                        `;
+                        detailsEl.appendChild(div);
+                    });
+                    
+                    // 顯示各人提交的數字
+                    if (state.result.submissions) {
+                        const subDiv = document.createElement('div');
+                        subDiv.className = 'result-item';
+                        subDiv.style.flexDirection = 'column';
+                        subDiv.style.alignItems = 'flex-start';
+                        subDiv.innerHTML = '<span>各人提交:</span>';
+                        
+                        const subList = document.createElement('div');
+                        subList.style.marginTop = '5px';
+                        
+                        for (const [name, value] of Object.entries(state.result.submissions)) {
+                            const item = document.createElement('div');
+                            item.textContent = `${name}: ${value}`;
+                            item.style.marginLeft = '20px';
+                            subList.appendChild(item);
+                        }
+                        
+                        subDiv.appendChild(subList);
+                        detailsEl.appendChild(subDiv);
+                    }
+                }
+                
+                document.getElementById('backBtn').disabled = !isHost;
+            }
+        }
+        
+        function hideAllControls() {
+            document.getElementById('lobbyControls').classList.add('hidden');
+            document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('revealControls').classList.add('hidden');
+            document.getElementById('resultSection').classList.add('hidden');
+        }
+        
+        function startRound() {
+            socket.emit('startRound');
+            hasSubmitted = false;
+        }
+        
+        function submitNumber() {
+            const input = document.getElementById('numberInput');
+            const value = parseInt(input.value);
+            
+            if (isNaN(value) || value < 1 || value > parseInt(input.max)) {
+                showError('roomError', '請輸入有效的數字（1 到 ' + input.max + '）');
+                return;
+            }
+            
+            socket.emit('submitNumber', value);
+        }
+        
+        function revealResult() {
+            socket.emit('revealResult');
+        }
+        
+        function forceReveal() {
+            socket.emit('forceReveal');
+        }
+        
+        function backToLobby() {
+            socket.emit('backToLobby');
+            hasSubmitted = false;
+        }
+        
+        function kickUser(userName) {
+            if (confirm(`確定要踢出 ${userName} 嗎？`)) {
+                socket.emit('kickUser', userName);
+            }
+        }
+        
+        function leaveRoom() {
+            if (confirm('確定要離開房間嗎？')) {
+                location.reload();
+            }
+        }
+        
+        function showError(elementId, message) {
+            const el = document.getElementById(elementId);
+            el.textContent = message;
+            el.classList.remove('hidden');
+            setTimeout(() => {
+                el.classList.add('hidden');
+            }, 3000);
+        }
+        
+        // 處理頁面關閉/刷新
+        window.addEventListener('beforeunload', () => {
+            if (socket && currentRoom) {
+                socket.emit('leaveRoom');
+            }
+        });
+    </script>
+</body>
+</html>
